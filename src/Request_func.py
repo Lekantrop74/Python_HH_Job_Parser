@@ -39,7 +39,11 @@ def get_vacancies_HH(keyword, max_vacancies):
     }
 
     # Первый запрос, чтобы узнать общее количество вакансий
-    response_init = requests.get(url_vacancy, params={"text": keyword, "per_page": 1, "page": 0}, headers=headers)
+    response_init = requests.get(
+        url_vacancy,
+        params={"text": keyword, "search_field": "name", "per_page": 1, "page": 0},
+        headers=headers
+    )
 
     if response_init.status_code != 200:
         print("Ошибка при получении общего количества вакансий:", response_init.status_code)
@@ -51,6 +55,7 @@ def get_vacancies_HH(keyword, max_vacancies):
     while len(data) < max_vacancies and page * per_page < total_found:
         params_vacancy = {
             "text": keyword,  # Ключевое слово для поиска
+            "search_field": "name",  # фильтрация по заголовку
             "per_page": per_page,  # Количество вакансий на странице
             "page": page  # Текущая страница
         }
