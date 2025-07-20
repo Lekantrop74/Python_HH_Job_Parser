@@ -180,3 +180,4 @@ cython_debug/
 /.idea/inspectionProfiles/Project_Default.xml
 /.idea/Python_HH_Job_Parser.iml
 /.idea/sqldialects.xml
+/src/cover_letter.txt

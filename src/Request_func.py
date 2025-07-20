@@ -56,8 +56,9 @@ def get_vacancies_HH(keyword, max_vacancies):
         params_vacancy = {
             "text": keyword,  # Ключевое слово для поиска
             "search_field": "name",  # фильтрация по заголовку
+            "order_by": "publication_time",  # Сортировка по дате публикации
             "per_page": per_page,  # Количество вакансий на странице
-            "page": page  # Текущая страница
+            "page": page,  # Текущая страница
         }
 
         # Отправляем GET-запрос на API

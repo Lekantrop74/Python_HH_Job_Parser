@@ -37,67 +37,97 @@ def load_cookies(driver):
 
 def check_and_click_apply(driver):
     """
-    Проверяет, был ли уже отклик на вакансию. Если нет, пытается нажать кнопку 'Откликнуться'.
+    Проверяет наличие кнопки 'Откликнуться' в основной карточке.
+    Если кнопка есть — кликает, иначе считает, что отклик уже был.
 
     :param driver: экземпляр Selenium WebDriver
-    :return: True, если отклик уже был (или после клика по кнопке отклика);
-             False, если кнопка 'Откликнуться' не найдена (отклик не отправлен)
+    :return: True, если клик по кнопке выполнен;
+             False, если кнопки не было (уже откликался или отказ)
     """
     try:
-        # Проверка наличия текста "Вы откликнулись"
-        if driver.find_element(By.XPATH, '//div[contains(normalize-space(text()), "Вы откликнулись")]')\
-                or driver.find_element(By.XPATH, '//div[contains(text(), "Вам отказали")]'):
-            print(1)
-            return True
-    except NoSuchElementException:
-        # Если не откликнулись, пытаемся найти кнопку и кликнуть
-        print(2)
+        # Пробуем найти кнопку "Откликнуться"
+        apply_button = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                '//div[not(@data-qa="vacancy-serp__vacancy") and contains(@class, "magritte-card")]//span[text()="Откликнуться"]'
+            ))
+        )
+        apply_button.click()
+        # print("✅ Клик по кнопке 'Откликнуться' выполнен")
+
+        # Обработка окна с предупреждением про вакансию в другой стране
         try:
-            apply_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((
-                    By.XPATH,
-                    '//div[not(@data-qa="vacancy-serp__vacancy") and contains(@class, "magritte-card")]//span[text()="Откликнуться"]'
-                ))
+            relocate_button = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable(
+                    (By.XPATH, '//span[text()="Все равно откликнуться"]/ancestor::button'))
             )
-            apply_button.click()
-            # Обработка окна подтверждения отклика на вакансию в другой стране
-            try:
-                relocate_button = WebDriverWait(driver, 3).until(
-                    EC.element_to_be_clickable(
-                        (By.XPATH, '//span[text()="Все равно откликнуться"]/ancestor::button'))
-                )
-                relocate_button.click()
-                print("⚠️ Подтвержден отклик на вакансию в другой стране.")
-            except TimeoutException:
-                pass  # Окно не появилось — всё в порядке
-            return True  # Кликнули — считаем, что отклик отправлен
+            relocate_button.click()
+            # print("⚠️ Подтвержден отклик на вакансию в другой стране.")
         except TimeoutException:
-            return False  # Кнопка не найдена, отклик не отправлен
+            pass  # Окно не появилось — всё нормально
+
+        return True
+
+    except TimeoutException:
+        # print("⏭ Нет кнопки 'Откликнуться' — возможно, уже откликались или отказ")
+        return False
 
 
-# def already_applied(driver):
-#     """
-#     Проверяет, был ли уже отклик на вакансию на текущей странице.
-#
-#     :param driver: Экземпляр Selenium WebDriver
-#     :return: True, если отклик уже был отправлен; False, если нет
-#     """
-#     try:
-#         driver.find_element(By.XPATH, '//div[contains(text(), "Вы откликнулись")]')
-#         # 2. Попробовать найти поле сопроводительного письма
-#         try:
-#             label_elem = driver.find_element(By.XPATH, '//label[contains(text(), "Сопроводительное письмо")]')
-#             label_id = label_elem.get_attribute("id")
-#             letter_field = driver.find_element(By.XPATH, f'//textarea[@aria-labelledby="{label_id}"]')
-#
-#             # 3. Проверить, заполнено ли поле
-#             existing_text = letter_field.get_attribute("value") or ""
-#             return bool(existing_text.strip())  # True — если поле не пустое
-#         except NoSuchElementException:
-#             # Если поле письма вообще не отображается, считаем, что его и не требовалось — значит, всё ок
-#             return True
-#     except NoSuchElementException:
-#         return False
+def fill_and_submit_cover_letter(driver, vacancy_name):
+    """
+    Генерирует и вставляет сопроводительное письмо, затем кликает кнопку отправки.
+
+    :param driver: экземпляр Selenium WebDriver
+    :param vacancy_name: название вакансии для генерации письма
+    :return: True, если письмо вставлено и отправлено успешно, False иначе
+    """
+    try:
+        label_elem = WebDriverWait(driver, 3).until(
+            EC.presence_of_element_located((By.XPATH, '//label[contains(text(), "Сопроводительное письмо")]'))
+        )
+        label_id = label_elem.get_attribute("id")
+        letter_field = WebDriverWait(driver, 3).until(
+            EC.presence_of_element_located((By.XPATH, f'//textarea[@aria-labelledby="{label_id}"]'))
+        )
+        letter = generate_cover_letter(vacancy_name)
+        if not letter:
+            print(f"⏭ Пропущено: сопроводительное письмо не вставлено для «{vacancy_name}»")
+            return False
+        letter_field.clear()
+        letter_field.send_keys(letter)
+    except TimeoutException:
+        print(f"❌ Не удалось найти поле для письма: {vacancy_name}")
+        return False
+
+    # Клик по кнопке "Отправить"
+    try:
+        submit_btn = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, '//button[.//span[text()="Отправить"]]'))
+        )
+        submit_btn.click()
+        time.sleep(1)  # задержка 1 секунда
+        return True
+    except TimeoutException:
+        print(f"❌ Кнопка отправки не найдена: {vacancy_name}")
+        return False
+
+
+def already_applied(driver):
+    """
+    Проверяет, есть ли поле сопроводительного письма и заполнено ли оно.
+
+    :param driver: Selenium WebDriver
+    :return: True, если письмо уже есть и заполнено, False если письма нет или оно пустое
+    """
+    try:
+        label_elem = driver.find_element(By.XPATH, '//label[contains(text(), "Сопроводительное письмо")]')
+        label_id = label_elem.get_attribute("id")
+        letter_field = driver.find_element(By.XPATH, f'//textarea[@aria-labelledby="{label_id}"]')
+        existing_text = letter_field.get_attribute("value") or ""
+        return bool(existing_text.strip())
+    except NoSuchElementException:
+        # Если поле письма нет — считаем, что письмо не вставлено
+        return False
 
 
 def generate_cover_letter(name, path="src/cover_letter.txt"):
@@ -121,19 +151,8 @@ def generate_cover_letter(name, path="src/cover_letter.txt"):
 
 
 def apply_to_vacancy(vacancies):
-    """
-    Автоматически переходит по URL'ам вакансий и откликается на них через браузер.
-    Предварительно использует сохранённые cookies для авторизации.
-    Пропускает вакансии, на которые уже был отклик или при ошибках.
-
-    :param vacancies: Список словарей, содержащих ключи:
-                      - 'url' (str): ссылка на вакансию
-                      - 'vacancy_name' (str): название вакансии
-    """
     driver = webdriver.Chrome()
-
     try:
-        # Авторизация через cookies
         load_cookies(driver)
 
         for vacancy in vacancies:
@@ -141,72 +160,36 @@ def apply_to_vacancy(vacancies):
             vacancy_name = vacancy['vacancy_name']
 
             try:
-                # Переход на страницу вакансии
                 driver.get(vacancy_url)
+                WebDriverWait(driver, 5).until(
+                    lambda d: d.execute_script("return document.readyState") == "complete"
+                )
 
-                # # Ожидание полной загрузки страницы
-                # WebDriverWait(driver, 15, poll_frequency=0.1).until(
-                #     lambda d: d.execute_script("return document.readyState") in ["interactive", "complete"]
-                # )
+                # Сначала пробуем нажать "Откликнуться"
+                if check_and_click_apply(driver):
+                    print(f"✅ Кнопка 'Откликнуться' нажата для вакансии: {vacancy_name}")
+                    # После клика пытаемся вставить и отправить письмо
+                    if fill_and_submit_cover_letter(driver, vacancy_name):
+                        print(f"✅ Сопроводительное письмо вставлено и отправлено: {vacancy_name}")
+                    else:
+                        print(f"⏭ Сопроводительное письмо не отправлено для вакансии: {vacancy_name}")
 
-                if not check_and_click_apply(driver):
-                    print(f"✅ Отклик отправлен или уже был отправлен для вакансии: {vacancy_name}")
                 else:
-                    print(f"❌ Кнопка отклика не найдена или отклик не отправлен для вакансии: {vacancy_name}")
-
-
-
-
-
-                # # Генерация и вставка сопроводительного письма
-                # try:
-                #     letter = generate_cover_letter(vacancy_name)
-                #     # Найти label с текстом "Сопроводительное письмо"
-                #     label_elem = WebDriverWait(driver, 1).until(
-                #         EC.presence_of_element_located(
-                #             (By.XPATH, '//label[contains(text(), "Сопроводительное письмо")]'))
-                #     )
-                #
-                #     # Получить значение его id
-                #     label_id = label_elem.get_attribute("id")
-                #
-                #     # Найти textarea, у которого aria-labelledby == id найденного label
-                #     letter_field = WebDriverWait(driver, 1).until(
-                #         EC.presence_of_element_located((By.XPATH, f'//textarea[@aria-labelledby="{label_id}"]'))
-                #     )
-                #
-                #     # Очистить и вставить текст
-                #     letter_field.clear()
-                #     if letter:  # только если письмо удалось загрузить
-                #         letter_field.send_keys(letter)
-                #     else:
-                #         print(f"⏭ Пропущено: сопроводительное письмо не вставлено для «{vacancy_name}»")
-                #         continue
-                # except TimeoutException:
-                #     print(f"❌ Не удалось найти поле для письма: {vacancy_name}")
-                #     continue
-                #
-                # time.sleep(3)  # Дать время на рендеринг UI
-                #
-                # # Клик по кнопке "Отправить"
-                # try:
-                #     submit_btn = WebDriverWait(driver, 10).until(
-                #         EC.element_to_be_clickable(
-                #             (By.XPATH, '//button[.//span[text()="Отправить"]]'))
-                #     )
-                #     submit_btn.click()
-                # except TimeoutException:
-                #     print(f"❌ Кнопка отправки не найдена: {vacancy_name}")
-                #     continue
-
-                time.sleep(1)  # Небольшая пауза после отклика
-                print(f"✅ Отклик отправлен: {vacancy_name}")
+                    # Если кнопки нет, проверяем, возможно письмо еще не отправлено
+                    if not already_applied(driver):
+                        print(
+                            f"⚠️ Нет кнопки 'Откликнуться', но письмо не заполнено — пытаемся вставить и отправить письмо: {vacancy_name}")
+                        if fill_and_submit_cover_letter(driver, vacancy_name):
+                            print(f"✅ Сопроводительное письмо вставлено и отправлено: {vacancy_name}")
+                        else:
+                            print(f"❌ Не удалось вставить письмо и отправить: {vacancy_name}")
+                    else:
+                        print(f"⏭ Уже откликались или отказ: {vacancy_name}")
 
             except Exception as e:
-                # Общая ошибка по вакансии — лог и переход к следующей
                 print(f"❌ Ошибка при обработке вакансии «{vacancy_name}»: {e}")
                 continue
 
     finally:
-        # Закрытие браузера
+
         driver.quit()
