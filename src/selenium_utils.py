@@ -6,6 +6,15 @@ from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+
+options = Options()
+options.add_argument("--headless=new")  # новый режим headless
+options.add_argument("--disable-gpu")
+options.add_argument("--window-size=1920,1080")  # для правильной отрисовки
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.page_load_strategy = 'eager'
 
 
 def save_cookies(Wr):
@@ -46,7 +55,7 @@ def check_and_click_apply(driver):
     """
     try:
         # Пробуем найти кнопку "Откликнуться"
-        apply_button = WebDriverWait(driver, 5).until(
+        apply_button = WebDriverWait(driver, 2).until(
             EC.element_to_be_clickable((
                 By.XPATH,
                 '//div[not(@data-qa="vacancy-serp__vacancy") and contains(@class, "magritte-card")]//span[text()="Откликнуться"]'
@@ -57,7 +66,7 @@ def check_and_click_apply(driver):
 
         # Обработка окна с предупреждением про вакансию в другой стране
         try:
-            relocate_button = WebDriverWait(driver, 3).until(
+            relocate_button = WebDriverWait(driver, 1).until(
                 EC.element_to_be_clickable(
                     (By.XPATH, '//span[text()="Все равно откликнуться"]/ancestor::button'))
             )
@@ -75,41 +84,37 @@ def check_and_click_apply(driver):
 
 def fill_and_submit_cover_letter(driver, vacancy_name):
     """
-    Генерирует и вставляет сопроводительное письмо, затем кликает кнопку отправки.
+    Вставляет сопроводительное письмо и кликает кнопку отправки.
 
-    :param driver: экземпляр Selenium WebDriver
-    :param vacancy_name: название вакансии для генерации письма
-    :return: True, если письмо вставлено и отправлено успешно, False иначе
+    :return: (успех: bool, сообщение: str)
     """
     try:
-        label_elem = WebDriverWait(driver, 3).until(
+        label_elem = WebDriverWait(driver, 2).until(
             EC.presence_of_element_located((By.XPATH, '//label[contains(text(), "Сопроводительное письмо")]'))
         )
         label_id = label_elem.get_attribute("id")
-        letter_field = WebDriverWait(driver, 3).until(
+        letter_field = WebDriverWait(driver, 2).until(
             EC.presence_of_element_located((By.XPATH, f'//textarea[@aria-labelledby="{label_id}"]'))
         )
         letter = generate_cover_letter(vacancy_name)
         if not letter:
-            print(f"⏭ Пропущено: сопроводительное письмо не вставлено для «{vacancy_name}»")
-            return False
+            return False, "⏭ Пропущено: шаблон письма не найден"
+
         letter_field.clear()
         letter_field.send_keys(letter)
-    except TimeoutException:
-        print(f"❌ Не удалось найти поле для письма: {vacancy_name}")
-        return False
 
-    # Клик по кнопке "Отправить"
+    except TimeoutException:
+        return False, "❌ Поле письма не найдено"
+
     try:
-        submit_btn = WebDriverWait(driver, 10).until(
+        submit_btn = WebDriverWait(driver, 3).until(
             EC.element_to_be_clickable((By.XPATH, '//button[.//span[text()="Отправить"]]'))
         )
         submit_btn.click()
-        time.sleep(1)  # задержка 1 секунда
-        return True
+        time.sleep(1)
+        return True, "✅ Письмо отправлено"
     except TimeoutException:
-        print(f"❌ Кнопка отправки не найдена: {vacancy_name}")
-        return False
+        return False, "❌ Кнопка отправки не найдена"
 
 
 def already_applied(driver):
@@ -150,46 +155,61 @@ def generate_cover_letter(name, path="src/cover_letter.txt"):
         return None
 
 
+def try_fill_and_submit(driver, vacancy_name):
+    success, message = fill_and_submit_cover_letter(driver, vacancy_name)
+    return success, message
+
+
 def apply_to_vacancy(vacancies):
-    driver = webdriver.Chrome()
+    driver = webdriver.Chrome(options=options)
+    len_vacancies = len(vacancies)
+    vacancy_count = 0
+    applied_count = 0
+    skipped_count = 0
+
     try:
         load_cookies(driver)
 
         for vacancy in vacancies:
             vacancy_url = vacancy['url']
             vacancy_name = vacancy['vacancy_name']
+            vacancy_count += 1
+
 
             try:
                 driver.get(vacancy_url)
-                WebDriverWait(driver, 5).until(
+                WebDriverWait(driver, 2).until(
                     lambda d: d.execute_script("return document.readyState") == "complete"
                 )
 
-                # Сначала пробуем нажать "Откликнуться"
                 if check_and_click_apply(driver):
-                    print(f"✅ Кнопка 'Откликнуться' нажата для вакансии: {vacancy_name}")
-                    # После клика пытаемся вставить и отправить письмо
-                    if fill_and_submit_cover_letter(driver, vacancy_name):
-                        print(f"✅ Сопроводительное письмо вставлено и отправлено: {vacancy_name}")
+                    success, message = try_fill_and_submit(driver, vacancy_name)
+                    if success:
+                        applied_count += 1
                     else:
-                        print(f"⏭ Сопроводительное письмо не отправлено для вакансии: {vacancy_name}")
-
+                        skipped_count += 1
+                    status_message = f"{message}: {vacancy_name}"
                 else:
-                    # Если кнопки нет, проверяем, возможно письмо еще не отправлено
                     if not already_applied(driver):
-                        print(
-                            f"⚠️ Нет кнопки 'Откликнуться', но письмо не заполнено — пытаемся вставить и отправить письмо: {vacancy_name}")
-                        if fill_and_submit_cover_letter(driver, vacancy_name):
-                            print(f"✅ Сопроводительное письмо вставлено и отправлено: {vacancy_name}")
+                        success, message = try_fill_and_submit(driver, vacancy_name)
+                        if success:
+                            applied_count += 1
                         else:
-                            print(f"❌ Не удалось вставить письмо и отправить: {vacancy_name}")
+                            skipped_count += 1
+                        status_message = f"{message}: {vacancy_name}"
                     else:
-                        print(f"⏭ Уже откликались или отказ: {vacancy_name}")
+                        skipped_count += 1
+                        status_message = f"⏭ Уже откликались: {vacancy_name}"
 
             except Exception as e:
-                print(f"❌ Ошибка при обработке вакансии «{vacancy_name}»: {e}")
-                continue
+                skipped_count += 1
+                status_message = f"❌ Ошибка: {vacancy_name} ({str(e)})"
+
+            # Единый и чистый вывод статуса после каждой вакансии
+            print(f"{status_message}\n📊 Обработано: {vacancy_count}/{len_vacancies} | Новых откликов: {applied_count} | Пропущено: {skipped_count}\n")
 
     finally:
-
+        print(f"\n🎯 Итог: из {len_vacancies} вакансий")
+        print(f"👉 Новых откликов: {applied_count}")
+        print(f"⏭ Пропущено (уже откликались/ошибки): {skipped_count}")
         driver.quit()

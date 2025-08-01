@@ -1,113 +1,85 @@
+import asyncio
 import re
+import aiohttp
+from tqdm.asyncio import tqdm_asyncio
 
-import requests
-import time
-from tqdm import tqdm  # Библиотека для отображения прогресса выполнения
+MAX_CONCURRENT_REQUESTS = 10
+REQUEST_TIMEOUT = 10
+PER_PAGE = 100
+semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
 
 def clean_html(raw_html):
-    """
-    Очищает HTML-разметку из текста, убирая теги и форматируя списки.
-    """
-    clean_text = re.sub(r'<br>', '\n', raw_html)  # Заменяем <br> на перенос строки
-    clean_text = re.sub(r'<[^>]+>', '', clean_text)  # Убираем все HTML-теги
-    clean_text = re.sub(r'&[^;]+;', ' ', clean_text)  # Убираем HTML-энкодированные символы
-    clean_text = re.sub(r'\n+', '\n', clean_text).strip()  # Убираем лишние пустые строки
+    clean_text = re.sub(r'<br>', '\n', raw_html)
+    clean_text = re.sub(r'<[^>]+>', '', clean_text)
+    clean_text = re.sub(r'&[^;]+;', ' ', clean_text)
+    clean_text = re.sub(r'\n+', '\n', clean_text).strip()
     return clean_text
 
 
-def get_vacancies_HH(keyword, max_vacancies):
-    """
-    Получает вакансии с сайта HH.ru по заданному ключевому слову с учетом пагинации.
+async def fetch_details(session, vacancy_id):
+    async with semaphore:
+        async with session.get(f"https://api.hh.ru/vacancies/{vacancy_id}") as resp:
+            return await resp.json()
 
-    Аргументы:
-    - keyword (str): ключевое слово для поиска вакансий (например, "Python разработчик").
-    - max_vacancies (int): максимальное количество вакансий для загрузки.
 
-    Возвращает:
-    - data (list): список словарей с информацией о найденных вакансиях.
-    - total_found (int): общее количество найденных вакансий.
-    """
-
-    url_vacancy = "https://api.hh.ru/vacancies"  # URL API HH.ru для поиска вакансий
-    per_page = 100  # Максимальное количество вакансий на одной странице
-    page = 0  # Номер страницы
-    data = []  # Список для хранения вакансий
-
-    headers = {
-        "User-Agent": "my-hh-bot"  # Указываем User-Agent, иначе API может отказать в доступе
+def parse_vacancy(vacancy, detail):
+    salary = vacancy.get("salary") or {}
+    return {
+        "id": vacancy["id"],
+        "name": vacancy["name"],
+        "url": vacancy["alternate_url"],
+        "salary_from": salary.get("from"),
+        "salary_to": salary.get("to"),
+        "area": vacancy["area"]["name"],
+        "description": clean_html(detail.get("description", "Описание отсутствует")),
     }
 
-    # Первый запрос, чтобы узнать общее количество вакансий
-    response_init = requests.get(
-        url_vacancy,
-        params={"text": keyword, "search_field": "name", "per_page": 1, "page": 0},
-        headers=headers
-    )
 
-    if response_init.status_code != 200:
-        print("Ошибка при получении общего количества вакансий:", response_init.status_code)
-        return [], 0
+async def get_vacancies_async(keyword, max_vacancies, show_progress=True):
+    url = "https://api.hh.ru/vacancies"
+    page = 0
+    data = []
 
-    total_found = response_init.json().get("found", 0)  # Общее количество найденных вакансий
+    headers = {"User-Agent": "my-hh-bot"}
 
-    # Пока не достигли лимита вакансий и есть вакансии
-    while len(data) < max_vacancies and page * per_page < total_found:
-        params_vacancy = {
-            "text": keyword,  # Ключевое слово для поиска
-            "search_field": "name",  # фильтрация по заголовку
-            "order_by": "publication_time",  # Сортировка по дате публикации
-            "per_page": per_page,  # Количество вакансий на странице
-            "page": page,  # Текущая страница
-        }
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(url, params={"text": keyword, "search_field": "name", "per_page": 1, "page": 0}) as resp:
+            if resp.status != 200:
+                print("Ошибка запроса")
+                return [], 0
+            total_found = (await resp.json())["found"]
 
-        # Отправляем GET-запрос на API
-        response_vacancy = requests.get(url_vacancy, params=params_vacancy, headers=headers)
-
-        if response_vacancy.status_code != 200:
-            print("Ошибка при выполнении запроса:", response_vacancy.status_code)
-            break
-
-        vacancies = response_vacancy.json()["items"]  # Получаем список вакансий
-
-        if not vacancies:  # Если вакансий больше нет, выходим из цикла
-            break
-
-        # Используем tqdm для отображения прогресса обработки вакансий
-        for vacancy in tqdm(vacancies, desc=f"Страница {page + 1}", ncols=80, ascii=True):
-            # Получаем детальную информацию о вакансии
-            vacancy_details = requests.get(f"https://api.hh.ru/vacancies/{vacancy['id']}", headers=headers).json()
-
-            # Проверяем наличие данных о зарплате
-            salary_from = vacancy["salary"]["from"] if vacancy["salary"] and vacancy["salary"]["from"] else None
-            salary_to = vacancy["salary"]["to"] if vacancy["salary"] and vacancy["salary"]["to"] else None
-
-            # Очищаем описание вакансии от HTML-тегов
-            cleaned_description = clean_html(vacancy_details.get("description", "Описание отсутствует"))
-
-            # Создаем словарь с данными о вакансии
-            vacancy_data = {
-                "id": vacancy["id"],  # ID вакансии
-                "name": vacancy["name"],  # Название вакансии
-                "url": vacancy["alternate_url"],  # Ссылка на вакансию
-                "salary_from": salary_from,  # Нижняя граница зарплаты
-                "salary_to": salary_to,  # Верхняя граница зарплаты
-                "area": vacancy["area"]["name"],  # Город
-                "description": cleaned_description  # Очищенное описание вакансии
+        while len(data) < max_vacancies and page * PER_PAGE < total_found:
+            params = {
+                "text": keyword,
+                "search_field": "name",
+                "order_by": "publication_time",
+                "per_page": PER_PAGE,
+                "page": page
             }
 
-            # Добавляем вакансию в список
-            data.append(vacancy_data)
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    print("Ошибка страницы", page)
+                    break
+                vacancies = (await resp.json())["items"]
 
-            # Если достигли лимита, выходим
-            if len(data) >= max_vacancies:
-                break
+            limit = min(max_vacancies - len(data), len(vacancies))
+            ids = [v["id"] for v in vacancies[:limit]]
 
-            # Добавляем небольшую задержку для эффекта прогресс-бара и чтобы не перегружать API
-            time.sleep(0.01)
+            fetcher = tqdm_asyncio.gather if show_progress else asyncio.gather
+            details = await fetcher(*[fetch_details(session, vid) for vid in ids], desc=f"Страница {page + 1}",
+                                    ncols=80)
 
-        page += 1  # Переходим на следующую страницу
+            for vacancy, detail in zip(vacancies, details):
+                if not detail:
+                    continue
+                data.append(parse_vacancy(vacancy, detail))
+                if len(data) >= max_vacancies:
+                    break
 
-    print(f"Всего загружено {len(data)} вакансий из {total_found} найденных по запросу '{keyword}'")
+            page += 1
 
-    return data
+    print(f"Загружено {len(data)} из {total_found}")
+    return data, total_found

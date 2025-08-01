@@ -1,6 +1,7 @@
-from src.Request_func import get_vacancies_HH
+from src.Request_func import get_vacancies_async
 from src.data_utils import compare_vacancies, export_vacancies, filter_vacancies
 from src.selenium_utils import apply_to_vacancy
+import asyncio
 
 
 def print_menu(menu_type="main"):
@@ -95,7 +96,7 @@ def handle_search_and_save(writer):
     else:
         max_vacancies_input = 5
 
-    vacancies = get_vacancies_HH(keyword, max_vacancies_input)
+    vacancies, _ = asyncio.run(get_vacancies_async(keyword, max_vacancies_input))
 
     writer.create_table()
     writer.clear_table()

@@ -181,3 +181,6 @@ cython_debug/
 /.idea/Python_HH_Job_Parser.iml
 /.idea/sqldialects.xml
 /src/cover_letter.txt
+/.idea/.gitignore
+/.idea/Python_HH_Job_Parser1.iml
+/.idea/vcs.xml
