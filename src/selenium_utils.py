@@ -1,7 +1,6 @@
 import asyncio
 import pickle
-import time
-
+from functools import lru_cache
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
@@ -17,8 +16,15 @@ options.add_argument("--window-size=1920,1080")
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
 options.page_load_strategy = 'eager'
+options.add_experimental_option("prefs", {
+    "profile.managed_default_content_settings.images": 2,
+    "profile.managed_default_content_settings.stylesheets": 2,
+    "profile.managed_default_content_settings.fonts": 2,
+})
 
+LETTER_TEMPLATE_PATH = "src/cover_letter.txt"
 MAX_PARALLEL_DRIVERS = 3
+PAGE_TIMEOUT = 5  # вместо 2
 
 
 def save_cookies():
@@ -36,12 +42,6 @@ def load_cookies(driver):
         for cookie in pickle.load(file):
             driver.add_cookie(cookie)
     driver.refresh()
-
-
-def wait_for_page_load(driver, timeout=2):
-    WebDriverWait(driver, timeout).until(
-        lambda d: d.execute_script("return document.readyState") == "complete"
-    )
 
 
 def check_and_click_apply(driver):
@@ -80,72 +80,60 @@ def already_applied(driver):
         return False
 
 
-def load_letter_template(path="src/cover_letter.txt"):
+@lru_cache
+def load_letter_template(path=LETTER_TEMPLATE_PATH):
     try:
         with open(path, encoding='utf-8') as f:
             return f.read()
     except Exception as e:
-        print(f"❌ Ошибка при загрузке шаблона письма: {e}")
+        print(f"❌ Ошибка при загрузке шаблона: {e}")
         return None
-
-
-LETTER_TEMPLATE = load_letter_template()
 
 
 def generate_cover_letter(name):
-    if not LETTER_TEMPLATE:
-        return None
-    return LETTER_TEMPLATE.format(vacancy_name=name)
+    template = load_letter_template()
+    return template.format(vacancy_name=name) if template else None
 
 
-def fill_and_submit_cover_letter(driver, vacancy_name):
+def fill_and_submit_cover_letter(driver, name):
     try:
-        label_elem = WebDriverWait(driver, 2).until(
+        label = WebDriverWait(driver, PAGE_TIMEOUT).until(
             EC.presence_of_element_located((By.XPATH, '//label[contains(text(), "Сопроводительное письмо")]'))
         )
-        label_id = label_elem.get_attribute("id")
-        letter_field = WebDriverWait(driver, 2).until(
-            EC.presence_of_element_located((By.XPATH, f'//textarea[@aria-labelledby="{label_id}"]'))
-        )
+        label_id = label.get_attribute("id")
 
-        letter = generate_cover_letter(vacancy_name)
+        textarea = driver.find_element(By.XPATH, f'//textarea[@aria-labelledby="{label_id}"]')
+        letter = generate_cover_letter(name)
+
         if not letter:
-            return False, "⏭ Пропущено: шаблон письма не найден"
+            return False, "⏭ Пропущено: шаблон не найден"
 
-        letter_field.clear()
-        letter_field.send_keys(letter)
+        textarea.clear()
+        textarea.send_keys(letter)
 
-        submit_btn = WebDriverWait(driver, 3).until(
+        submit = WebDriverWait(driver, PAGE_TIMEOUT).until(
             EC.element_to_be_clickable((By.XPATH, '//button[.//span[text()="Отправить"]]'))
         )
-        submit_btn.click()
-        time.sleep(1)
+        submit.click()
         return True, "✅ Письмо отправлено"
 
     except TimeoutException:
-        return False, "❌ Ошибка: не удалось отправить письмо"
+        return False, "❌ Не удалось отправить"
 
 
 def process_single_vacancy(driver, vacancy):
-    url = vacancy['url']
-    name = vacancy['vacancy_name']
     try:
-        driver.get(url)
-        wait_for_page_load(driver)
+        driver.get(vacancy['url'])
 
-        if check_and_click_apply(driver):
-            success, message = fill_and_submit_cover_letter(driver, name)
-
-        elif not already_applied(driver):
-            success, message = fill_and_submit_cover_letter(driver, name)
-
+        if check_and_click_apply(driver) or not already_applied(driver):
+            success, message = fill_and_submit_cover_letter(driver, vacancy['vacancy_name'])
         else:
-            return False, f"⏭ Уже откликались: {name}"
+            return False, f"⏭ Уже откликались: {vacancy['vacancy_name']}"
 
-        return success, f"{message}: {name}"
+        return success, f"{message}: {vacancy['vacancy_name']}"
 
     except Exception as e:
-        return False, f"❌ Ошибка: {name} ({str(e)})"
+        return False, f"❌ Ошибка: {vacancy['vacancy_name']} ({e})"
 
 
 def apply_to_vacancy_batch(vacancies):
@@ -160,7 +148,7 @@ def apply_to_vacancy_batch(vacancies):
             success, message = process_single_vacancy(driver, vacancy)
             applied += success
             skipped += not success
-            print(f"{message}\n📊 Обработано: {idx}/{len(vacancies)} | Новых: {applied} | Пропущено: {skipped}")
+            print(f"{message}\n📊 {idx}/{len(vacancies)} | ✅ {applied} | ⏭ {skipped}")
 
     finally:
         print(f"\n🎯 Итог: из {total} вакансий")
