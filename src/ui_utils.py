@@ -1,6 +1,6 @@
 from src.Request_func import get_vacancies_async
 from src.data_utils import compare_vacancies, export_vacancies, filter_vacancies
-from src.selenium_utils import apply_to_vacancy
+from src.selenium_utils import apply_to_vacancies_parallel_batched
 import asyncio
 
 
@@ -190,7 +190,10 @@ def send_apply_to_vacancy(writer):
     :param writer: Экземпляр класса работы с БД
     """
     vacancies = writer.get_all_vacancies()
-    apply_to_vacancy(vacancies)
+    asyncio.run(apply_to_vacancies_parallel_batched(vacancies))
+
+    # apply_to_vacancy(vacancies)
+
 
 
 def clear_table(writer):
