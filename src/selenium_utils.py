@@ -46,6 +46,22 @@ def load_cookies(driver):
 
 def check_and_click_apply(driver):
     try:
+        skip_checks = [
+            {
+                "xpath": '//*[translate(normalize-space(.), "\u00A0", " ")="Вы откликнулись"]',
+                "reason": "⏭ Уже откликались"
+            },
+            {
+                "xpath": '//*[contains(@class, "magritte-text") and contains(text(), "Вам отказали")]',
+                "reason": "⏭ Получен отказ"
+            }
+        ]
+
+        for check in skip_checks:
+            if driver.find_elements(By.XPATH, check["xpath"]):
+                print(check["reason"])
+                return False
+
         apply_button = WebDriverWait(driver, 2).until(
             EC.element_to_be_clickable((
                 By.XPATH,
@@ -66,17 +82,6 @@ def check_and_click_apply(driver):
         return True
 
     except TimeoutException:
-        return False
-
-
-def already_applied(driver):
-    try:
-        label_elem = driver.find_element(By.XPATH, '//label[contains(text(), "Сопроводительное письмо")]')
-        label_id = label_elem.get_attribute("id")
-        letter_field = driver.find_element(By.XPATH, f'//textarea[@aria-labelledby="{label_id}"]')
-        existing_text = letter_field.get_attribute("value") or ""
-        return bool(existing_text.strip())
-    except NoSuchElementException:
         return False
 
 
@@ -125,7 +130,7 @@ def process_single_vacancy(driver, vacancy):
     try:
         driver.get(vacancy['url'])
 
-        if check_and_click_apply(driver) or not already_applied(driver):
+        if check_and_click_apply(driver):
             success, message = fill_and_submit_cover_letter(driver, vacancy['vacancy_name'])
         else:
             return False, f"⏭ Уже откликались: {vacancy['vacancy_name']}"
