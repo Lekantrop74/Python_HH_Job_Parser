@@ -1,14 +1,21 @@
+import asyncio
 from src.Request_func import get_vacancies_async
 from src.data_utils import compare_vacancies, export_vacancies, filter_vacancies
 from src.selenium_utils import apply_to_vacancies_parallel_batched
-import asyncio
+
+
+def get_input(prompt, default=None, cast=str):
+    while True:
+        val = input(prompt).strip()
+        if not val:
+            return default
+        try:
+            return cast(val)
+        except (ValueError, TypeError):
+            print(f"Неверный ввод. Ожидается значение типа {cast.__name__}.")
 
 
 def print_menu(menu_type="main"):
-    """
-    Выводит текстовое меню на экран в зависимости от типа.
-    :param menu_type: Строка, указывающая тип меню ('main', 'filter', 'export')
-    """
     menus = {
         "main": [
             "Выберите действие:",
@@ -36,67 +43,40 @@ def print_menu(menu_type="main"):
     print("\n" + "\n".join(menus.get(menu_type, [])))
 
 
-def print_vacancy(vacancy, index=None):
-    """
-    Выводит информацию об одной вакансии в читаемом виде.
-    :param vacancy: Словарь с данными о вакансии
-    :param index: Порядковый номер (опционально)
-    """
-    if index is not None:
-        print(f"\n{index}. {vacancy['vacancy_name']}")
-    else:
-        print(f"\n{vacancy['vacancy_name']}")
-    print(f"   Город: {vacancy['area']}")
-    print(f"   Зарплата: {vacancy['salary_from']} - {vacancy['salary_to']}")
-    print(f"   Ссылка: {vacancy['url']}")
-
-
-def print_vacancies(vacancies, empty_message):
-    """
-    Выводит список вакансий или сообщение, если список пустой.
-    :param vacancies: Список словарей с вакансиями
-    :param empty_message: Сообщение, если вакансий нет
-    """
-    if vacancies:
-        for i, vacancy in enumerate(vacancies, 1):
-            print_vacancy(vacancy, i)
-    else:
+def print_vacancies(vacancies, empty_message="Нет вакансий"):
+    if not vacancies:
         print(empty_message)
+        return
+    for i, v in enumerate(vacancies, 1):
+        print(f"\n{i}. {v['vacancy_name']}\n"
+              f"   Город: {v['area']}\n"
+              f"   Зарплата: {v['salary_from']} - {v['salary_to']}\n"
+              f"   Ссылка: {v['url']}")
 
 
 def print_stats(stats):
-    """
-    Выводит сводную статистику по вакансиям.
-    :param stats: Словарь со статистикой (кол-во, города, зарплаты)
-    """
     print("\nСтатистика по вакансиям:")
     print(f"Всего вакансий: {stats['total_vacancies']}")
     print(f"Уникальных городов: {stats['unique_cities']}")
     print(f"Средняя зарплата: {stats['avg_salary_from']: .0f} - {stats['avg_salary_to']: .0f}")
     print(f"Максимальная зарплата: {stats['max_salary']}")
-    print(f"Минимальная зарплата: {stats['min_salary']}")
-
-    print("\nТоп-5 городов:")
+    print(f"Минимальная зарплата: {stats['min_salary']}\n")
+    print("Топ-5 городов:")
     for city, count in stats['top_cities'].items():
         print(f"  {city}: {count}")
 
 
-# ==== Обработчики меню ====
+# ==== Обработчики ====
 
 def handle_search_and_save(writer):
-    """
-    Выполняет поиск вакансий по ключевому слову и сохраняет их в базу данных.
-    :param writer: Экземпляр класса работы с БД
-    """
-    keyword = input("Введите ключевое слово для поиска: ")
-    max_vacancies_input = input("Введите количество вакансий для поиска (По умолчанию 5): ")
+    keyword = get_input("Введите ключевое слово для поиска: ")
+    max_vacancies = get_input("Введите количество вакансий для поиска (По умолчанию 5): ", default=5, cast=int)
 
-    if max_vacancies_input.strip().isdigit():
-        max_vacancies_input = int(max_vacancies_input)
-    else:
-        max_vacancies_input = 5
-
-    vacancies, _ = asyncio.run(get_vacancies_async(keyword, max_vacancies_input))
+    try:
+        vacancies, _ = asyncio.run(get_vacancies_async(keyword, max_vacancies))
+    except KeyboardInterrupt:
+        print("\nОперация прервана пользователем.")
+        return
 
     writer.create_table()
     writer.clear_table()
@@ -106,54 +86,32 @@ def handle_search_and_save(writer):
 
 
 def handle_show_all(writer):
-    """
-    Показывает все сохраненные вакансии.
-    :param writer: Экземпляр класса работы с БД
-    """
-    vacancies = writer.get_all_vacancies()
-    print_vacancies(vacancies, "Нет сохраненных вакансий")
+    print_vacancies(writer.get_all_vacancies(), "Нет сохраненных вакансий")
 
 
 def handle_search_by_keyword(writer):
-    """
-    Производит поиск вакансий по ключевому слову в сохраненной базе.
-    :param writer: Экземпляр класса работы с БД
-    """
-    keyword = input("Введите ключевое слово для поиска: ")
-    vacancies = writer.get_vacancies_by_keyword(keyword)
-    print_vacancies(vacancies, "Вакансии не найдены")
+    keyword = get_input("Введите ключевое слово для поиска: ")
+    print_vacancies(writer.get_vacancies_by_keyword(keyword), "Вакансии не найдены")
 
 
 def handle_filter_vacancies(writer):
-    """
-    Применяет фильтрацию по городу и уровню зарплаты.
-    :param writer: Экземпляр класса работы с БД
-    """
     vacancies = writer.get_all_vacancies()
     if not vacancies:
         print("Нет сохраненных вакансий")
         return
 
     print_menu("filter")
-    city = input("Введите город: ").strip()
-    min_salary = input("Введите минимальную зарплату: ").strip()
-    max_salary = input("Введите максимальную зарплату: ").strip()
-
     filtered = filter_vacancies(
         vacancies,
-        city=city or None,
-        min_salary=int(min_salary) if min_salary else None,
-        max_salary=int(max_salary) if max_salary else None,
+        city=get_input("Введите город: "),
+        min_salary=get_input("Введите минимальную зарплату: ", cast=int),
+        max_salary=get_input("Введите максимальную зарплату: ", cast=int),
     )
 
     print_vacancies(filtered, "Вакансии не найдены")
 
 
 def handle_export(writer):
-    """
-    Выполняет экспорт вакансий в выбранный формат.
-    :param writer: Экземпляр класса работы с БД
-    """
     vacancies = writer.get_all_vacancies()
     if not vacancies:
         print("Нет сохраненных вакансий")
@@ -161,7 +119,8 @@ def handle_export(writer):
 
     print_menu("export")
     formats = {"1": "csv", "2": "xlsx"}
-    file_format = formats.get(input("Введите номер формата: "), None)
+    choice = get_input("Введите номер формата: ", cast=str)
+    file_format = formats.get(choice)
 
     if file_format:
         filename = export_vacancies(vacancies, file_format=file_format)
@@ -171,10 +130,6 @@ def handle_export(writer):
 
 
 def handle_compare_vacancies(writer):
-    """
-    Выводит статистику и сравнение по всем сохраненным вакансиям.
-    :param writer: Экземпляр класса работы с БД
-    """
     vacancies = writer.get_all_vacancies()
     if not vacancies:
         print("Нет сохраненных вакансий")
@@ -185,30 +140,18 @@ def handle_compare_vacancies(writer):
 
 
 def send_apply_to_vacancy(writer):
-    """
-    Запускает автоматическую отправку откликов на все вакансии.
-    :param writer: Экземпляр класса работы с БД
-    """
     vacancies = writer.get_all_vacancies()
-    asyncio.run(apply_to_vacancies_parallel_batched(vacancies))
-
-    # apply_to_vacancy(vacancies)
-
+    if vacancies:
+        asyncio.run(apply_to_vacancies_parallel_batched(vacancies))
+    else:
+        print("Нет вакансий для отклика.")
 
 
 def clear_table(writer):
-    """
-    Очищает таблицу вакансий в базе данных.
-    :param writer: Экземпляр класса работы с БД
-    """
     writer.clear_table()
-    print(f"\nБаза данных отчищена")
+    print("База данных очищена.")
 
 
-def exit_program(writer=None):
-    """
-    Завершает выполнение программы.
-    :param writer: Опционально принимает writer, если нужно освободить ресурсы
-    """
+def exit_program(_=None):
     print("До свидания!")
     exit()
