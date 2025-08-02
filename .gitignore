@@ -184,3 +184,5 @@ cython_debug/
 /.idea/.gitignore
 /.idea/Python_HH_Job_Parser1.iml
 /.idea/vcs.xml
+/vacancies.db
+/.idea/dataSources.xml
