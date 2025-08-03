@@ -1,5 +1,7 @@
 import asyncio
 import re
+from urllib.parse import urlencode
+
 import aiohttp
 from tqdm.asyncio import tqdm_asyncio
 
@@ -35,34 +37,42 @@ def parse_vacancy(vac, detail):
     }
 
 
-async def get_vacancies_async(keyword, max_vacancies, show_progress=True):
+async def get_vacancies_async(keyword, max_vacancies, search_field, order_by=None, show_progress=True):
     search_url = f"{BASE_URL}/vacancies"
     data, page = [], 0
 
     async with aiohttp.ClientSession(headers=HEADERS) as session:
-        initial = await fetch_json(session, f"{search_url}?text={keyword}&search_field=name&per_page=1&page=0")
+        initial_params = {
+            "text": keyword,
+            "search_field": search_field,
+            "per_page": 1,
+            "page": 0
+        }
+        initial = await fetch_json(session, f"{search_url}?{urlencode(initial_params)}")
         if not initial:
             print("Ошибка запроса")
             return [], 0
 
-        total_found = initial["found"]
+        total_found = initial.get("found", 0)
 
         while len(data) < max_vacancies and page * PER_PAGE < total_found:
             params = {
                 "text": keyword,
-                "search_field": "name",
-                "order_by": "publication_time",
+                "search_field": search_field,
                 "per_page": PER_PAGE,
                 "page": page
             }
+            if order_by:
+                params["order_by"] = order_by
 
-            resp = await fetch_json(session, f"{search_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}")
+            resp = await fetch_json(session, f"{search_url}?{urlencode(params)}")
             if not resp:
-                print("Ошибка страницы", page)
+                print(f"Ошибка страницы {page}")
                 break
 
             vacancies = resp["items"][:max_vacancies - len(data)]
             ids = [v["id"] for v in vacancies]
+
             fetcher = tqdm_asyncio.gather if show_progress else asyncio.gather
             details = await fetcher(*[fetch_json(session, f"{search_url}/{vid}") for vid in ids],
                                     desc=f"Страница {page + 1}", ncols=80)
