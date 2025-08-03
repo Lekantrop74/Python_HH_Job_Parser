@@ -41,7 +41,7 @@ options.add_experimental_option("prefs", {
 
 # Константы конфигурации
 LETTER_TEMPLATE_PATH = "src/cover_letter.txt"  # Путь к шаблону сопроводительного письма
-MAX_PARALLEL_DRIVERS = 3  # Максимальное количество параллельных браузеров
+# MAX_PARALLEL_DRIVERS = 3  # Максимальное количество параллельных браузеров
 PAGE_TIMEOUT = 5  # Таймаут ожидания элементов страницы (в секундах)
 
 
@@ -274,7 +274,7 @@ def process_single_vacancy(driver, vacancy):
         return False, "error", f"❌ Ошибка: {vacancy['vacancy_name']} ({e})"
 
 
-def apply_to_vacancy_batch(vacancies, final_stats):
+def apply_to_vacancy_batch(vacancies, final_stats, shadow):
     """
     Обрабатывает пакет вакансий в одном браузере
     
@@ -282,13 +282,15 @@ def apply_to_vacancy_batch(vacancies, final_stats):
         vacancies (list): Список словарей с информацией о вакансиях
         final_stats (dict): Словарь для накопления статистики
             Должен содержать ключи: "applied", "already_applied", "rejected", "errors"
+        shadow (bool): Запускать с сокрытием окон webdriver.Chrome() или нет.
             
     Функция создает один экземпляр браузера и обрабатывает все вакансии
     из пакета последовательно. Статистика накапливается в final_stats.
     
     В конце работы браузер автоматически закрывается.
     """
-    driver = webdriver.Chrome()
+
+    driver = webdriver.Chrome(options=options if shadow else None)
     load_cookies(driver)
 
     # Счетчики для текущего пакета
@@ -325,12 +327,13 @@ def apply_to_vacancy_batch(vacancies, final_stats):
         driver.quit()
 
 
-async def apply_to_vacancies_parallel_batched(vacancies):
+async def apply_to_vacancies_parallel_batched(vacancies, shadow=True, MAX_PARALLEL_DRIVERS = 3):
     """
     Обрабатывает вакансии параллельно с использованием нескольких браузеров
     
     Args:
         vacancies (list): Список словарей с информацией о вакансиях
+        shadow (bool): Список словарей с информацией о вакансиях
         
     Функция разделяет все вакансии на пакеты и обрабатывает их
     параллельно с использованием MAX_PARALLEL_DRIVERS браузеров.
@@ -349,7 +352,7 @@ async def apply_to_vacancies_parallel_batched(vacancies):
 
     async def run_batch(batch):
         """Внутренняя функция для запуска пакета в отдельном потоке"""
-        return await asyncio.to_thread(apply_to_vacancy_batch, batch, final_stats)
+        return await asyncio.to_thread(apply_to_vacancy_batch, batch, final_stats, shadow)
 
     # Запускаем все пакеты параллельно
     await asyncio.gather(*[run_batch(batch) for batch in batches])
