@@ -15,6 +15,7 @@
 """
 
 import asyncio
+import os
 import pickle
 from functools import lru_cache
 from selenium import webdriver
@@ -40,9 +41,8 @@ options.add_experimental_option("prefs", {
 })
 
 # Константы конфигурации
-LETTER_TEMPLATE_PATH = "src/cover_letter.txt"  # Путь к шаблону сопроводительного письма
-# MAX_PARALLEL_DRIVERS = 3  # Максимальное количество параллельных браузеров
-PAGE_TIMEOUT = 5  # Таймаут ожидания элементов страницы (в секундах)
+LETTER_TEMPLATE_PATH = os.getenv("LETTER_TEMPLATE_PATH", "src/cover_letter.txt")
+PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", 5))
 
 
 def save_cookies():
@@ -327,16 +327,17 @@ def apply_to_vacancy_batch(vacancies, final_stats, shadow):
         driver.quit()
 
 
-async def apply_to_vacancies_parallel_batched(vacancies, shadow=True, MAX_PARALLEL_DRIVERS = 3):
+async def apply_to_vacancies_parallel_batched(vacancies, shadow=True, max_parallel_drivers=3):
     """
     Обрабатывает вакансии параллельно с использованием нескольких браузеров
     
     Args:
         vacancies (list): Список словарей с информацией о вакансиях
         shadow (bool): Список словарей с информацией о вакансиях
+        max_parallel_drivers (int):
         
     Функция разделяет все вакансии на пакеты и обрабатывает их
-    параллельно с использованием MAX_PARALLEL_DRIVERS браузеров.
+    параллельно с использованием max_parallel_drivers браузеров.
     
     В конце выводит итоговую статистику по всем обработанным вакансиям.
     
@@ -344,7 +345,7 @@ async def apply_to_vacancies_parallel_batched(vacancies, shadow=True, MAX_PARALL
         await apply_to_vacancies_parallel_batched(vacancies_list)
     """
     # Вычисляем размер пакета для равномерного распределения
-    batch_size = (len(vacancies) + MAX_PARALLEL_DRIVERS - 1) // MAX_PARALLEL_DRIVERS
+    batch_size = (len(vacancies) + max_parallel_drivers - 1) // max_parallel_drivers
     batches = [vacancies[i:i + batch_size] for i in range(0, len(vacancies), batch_size)]
 
     # Инициализируем общую статистику
