@@ -82,3 +82,36 @@ class DBVacanciesManager:
         except sqlite3.Error as e:
             print(f"SQLite ошибка: {e}")
             return [] if fetch_all else None
+
+    def create_processed_urls_table(self):
+        self.execute_query("""
+            CREATE TABLE IF NOT EXISTS processed_urls (
+                id INTEGER PRIMARY KEY
+            );
+        """)
+        print("Таблица processed_urls успешно создана.")
+
+    def insert_processed_id(self, vacancy_id):
+        self.execute_query(
+            "INSERT OR IGNORE INTO processed_urls (id) VALUES (?);",
+            (vacancy_id,)
+        )
+
+    def insert_processed_ids_bulk(self, ids):
+        self.execute_query(
+            "INSERT OR IGNORE INTO processed_urls (id) VALUES (?);",
+            [(vid,) for vid in ids],
+            executemany=True
+        )
+
+    def is_id_processed(self, vacancy_id):
+        result = self.execute_query(
+            "SELECT 1 FROM processed_urls WHERE id = ?;",
+            (vacancy_id,),
+            fetch_all=True
+        )
+        return bool(result)
+
+    def get_all_processed_ids(self):
+        rows = self.execute_query("SELECT id FROM processed_urls;", fetch_all=True)
+        return set(row[0] for row in rows)

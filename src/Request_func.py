@@ -7,6 +7,8 @@ import aiohttp
 from dotenv import load_dotenv
 from tqdm.asyncio import tqdm_asyncio
 
+from src.DBManager import DBVacanciesManager
+
 load_dotenv()
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", 1))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 0))
@@ -80,6 +82,11 @@ async def get_vacancies_async(keyword, max_vacancies, search_field, order_by=Non
         prev_count = 0  # до while
         print(f"Всего найдено: {total_found}")
 
+        db = DBVacanciesManager()
+        db.create_processed_urls_table()
+        seen_urls = db.get_all_processed_ids()
+        print(seen_urls)
+
         while len(data) < max_vacancies and page * PER_PAGE < total_found:
             params = {
                 "text": keyword,
@@ -113,6 +120,8 @@ async def get_vacancies_async(keyword, max_vacancies, search_field, order_by=Non
                           f"\nСлишком много быстрых запросов сработала антибот система")
                     sys.exit(0)
                 if required_skills and not has_required_skills(detail, required_skills):
+                    continue
+                if vacancy["id"] in seen_urls:
                     continue
                 data.append(parse_vacancy(vacancy, detail))
                 if len(data) >= max_vacancies:

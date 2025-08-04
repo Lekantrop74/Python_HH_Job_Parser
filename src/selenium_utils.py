@@ -25,6 +25,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 
+from src.DBManager import DBVacanciesManager
+
 # Конфигурация Chrome драйвера для headless режима
 options = Options()
 options.add_argument("--headless=new")  # Новый headless режим Chrome
@@ -274,34 +276,23 @@ def process_single_vacancy(driver, vacancy):
         return False, "error", f"❌ Ошибка: {vacancy['vacancy_name']} ({e})"
 
 
-def apply_to_vacancy_batch(vacancies, final_stats, shadow):
-    """
-    Обрабатывает пакет вакансий в одном браузере
-    
-    Args:
-        vacancies (list): Список словарей с информацией о вакансиях
-        final_stats (dict): Словарь для накопления статистики
-            Должен содержать ключи: "applied", "already_applied", "rejected", "errors"
-        shadow (bool): Запускать с сокрытием окон webdriver.Chrome() или нет.
-            
-    Функция создает один экземпляр браузера и обрабатывает все вакансии
-    из пакета последовательно. Статистика накапливается в final_stats.
-    
-    В конце работы браузер автоматически закрывается.
-    """
-
+def apply_to_vacancy_batch(vacancies, final_stats, shadow, db_path="vacancies.db"):
     driver = webdriver.Chrome(options=options if shadow else None)
     load_cookies(driver)
 
-    # Счетчики для текущего пакета
+    db = DBVacanciesManager(db_path)
+    db.create_processed_urls_table()
+
     applied = already_applied = rejected = errors = 0
-    total = len(vacancies)
+    processed_id = []
 
     try:
         for idx, vacancy in enumerate(vacancies, 1):
             success, status, message = process_single_vacancy(driver, vacancy)
 
-            # Обновляем счетчики в зависимости от статуса
+            if status != "error":
+                processed_id.append(vacancy["id"])
+
             if status == "applied":
                 applied += 1
             elif status == "already_applied":
@@ -311,15 +302,14 @@ def apply_to_vacancy_batch(vacancies, final_stats, shadow):
             else:
                 errors += 1
 
-            # Выводим прогресс обработки
             print(
                 f"\n{message}"
-                f"\n📊 {idx}/{total} "
+                f"\n📊 {idx}/{len(vacancies)} "
                 f"| ✅ Новые: {applied} | ⏭ Уже были: {already_applied} "
                 f"| ❌ Отказ: {rejected} | 🛑 Ошибки: {errors}")
 
     finally:
-        # Добавляем статистику текущего пакета к общей статистике
+        db.insert_processed_ids_bulk(processed_id)
         final_stats["applied"] += applied
         final_stats["already_applied"] += already_applied
         final_stats["rejected"] += rejected
