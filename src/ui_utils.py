@@ -1,12 +1,14 @@
 import asyncio
+import os
+
 from src.Request_func import get_vacancies_async
 from src.data_utils import compare_vacancies, export_vacancies, filter_vacancies
 from src.selenium_utils import apply_to_vacancies_parallel_batched
 
-MAX_PARALLEL_ALLOWED = 5
+MAX_PARALLEL_ALLOWED = int(os.getenv("MAX_PARALLEL_ALLOWED", 5))
 
 
-def get_input(prompt, default=None, cast=str):
+def get_input(prompt, cast, default=None):
     while True:
         val = input(prompt).strip()
         if not val:
@@ -48,12 +50,12 @@ def print_menu(menu_type="main"):
             "4. Изменить количество потоков - скрытый режим",
         ],
         "search_field": [
-            "1. Только название вакансии (name)",
-            "2. Только описание вакансии (description)",
+            "1. Только название вакансии (name) (высокое соответствие)",
+            "2. Только описание вакансии (description) (низкое соответствие)",
         ],
         "order_by": [
             "1. Сортировка по релевантности",
-            "2. Сортировка по дате",
+            "2. Сортировка по дате публикации вакансии",
         ],
     }
     print("\n" + "\n".join(menus.get(menu_type, [])))
@@ -85,25 +87,39 @@ def print_stats(stats):
 # ==== Обработчики ====
 
 def handle_search_and_save(writer):
-    keyword = get_input("Введите ключевое слово для поиска: ")
-    max_vacancies = get_input("Введите количество вакансий для поиска (По умолчанию 5): ", default=5, cast=int)
+    keyword = get_input("Введите ключевое слово для поиска: ", str)
+    max_vacancies = get_input("Введите количество вакансий для поиска (По умолчанию 5): ", int, 5)
 
     print_menu("search_field")
-    search_field_choice = get_input("Введите поле поиска: ", default=1, cast=int)
+    search_field_choice = get_input("Введите поле поиска (по умолчанию name): ", int, 1)
     search_field_map = {
         1: "name",
         2: "description",
     }
     print_menu("order_by")
-    order_by_choice = get_input("Введите номер (по умолчанию 1): ", default=1, cast=int)
+    order_by_choice = get_input("Введите номер (по умолчанию 1): ", int, 1)
     order_by_map = {
         1: None,
         2: "publication_time",
     }
-
+    skills_input = get_input(
+        "\nВведите навыки для фильтрации по key_skills через запятую, например: Python, pandas."
+        "\nЗначительно повышает соответствие поиска. (Полезно при поиске по description)"
+        "\nОставьте пустым для пропуска: ",
+        str,
+        ""
+    )
+    required_skills = [s.strip() for s in skills_input.split(",") if s.strip()] or None
     try:
-        vacancies, _ = asyncio.run(get_vacancies_async(keyword, max_vacancies, search_field_map[search_field_choice],
-                                                       order_by_map[order_by_choice]))
+        vacancies, _ = asyncio.run(
+            get_vacancies_async(
+                keyword=keyword,
+                max_vacancies=max_vacancies,
+                search_field=search_field_map[search_field_choice],
+                order_by=order_by_map[order_by_choice],
+                required_skills=required_skills
+            )
+        )
     except KeyboardInterrupt:
         print("\nОперация прервана пользователем.")
         return
@@ -120,7 +136,7 @@ def handle_show_all(writer):
 
 
 def handle_search_by_keyword(writer):
-    keyword = get_input("Введите ключевое слово для поиска: ")
+    keyword = get_input("Введите ключевое слово для поиска: ", str)
     print_vacancies(writer.get_vacancies_by_keyword(keyword), "Вакансии не найдены")
 
 
@@ -133,9 +149,9 @@ def handle_filter_vacancies(writer):
     print_menu("filter")
     filtered = filter_vacancies(
         vacancies,
-        city=get_input("Введите город: "),
-        min_salary=get_input("Введите минимальную зарплату: ", cast=int),
-        max_salary=get_input("Введите максимальную зарплату: ", cast=int),
+        city=get_input("Введите город: ", str),
+        min_salary=get_input("Введите минимальную зарплату: ", int),
+        max_salary=get_input("Введите максимальную зарплату: ", int),
     )
 
     print_vacancies(filtered, "Вакансии не найдены")
@@ -149,7 +165,7 @@ def handle_export(writer):
 
     print_menu("export")
     formats = {"1": "csv", "2": "xlsx"}
-    choice = get_input("Введите номер формата: ", cast=str)
+    choice = get_input("Введите номер формата: ", str)
     file_format = formats.get(choice)
 
     if file_format:
@@ -169,13 +185,12 @@ def handle_compare_vacancies(writer):
     print_stats(stats)
 
 
-def get_parallel_driver_count():
-    count = get_input(f"Введите число потоков (1–{MAX_PARALLEL_ALLOWED}): ", cast=int)
-    if 1 <= count <= MAX_PARALLEL_ALLOWED:
-        return count
-    else:
+def get_parallel_driver_count() -> int:
+    while True:
+        count = get_input(f"Введите число потоков (1–{MAX_PARALLEL_ALLOWED}): ", int)
+        if 1 <= count <= MAX_PARALLEL_ALLOWED:
+            return count
         print(f"❗ Число должно быть от 1 до {MAX_PARALLEL_ALLOWED}")
-        return None
 
 
 def send_apply_to_vacancy(writer):
@@ -185,7 +200,7 @@ def send_apply_to_vacancy(writer):
         return
 
     print_menu("selenium")
-    choice = get_input("Введите номер формата: ", cast=int)
+    choice = get_input("Введите номер формата: ", int)
 
     if choice in (1, 2):
         shadow = (choice == 1)
@@ -196,7 +211,7 @@ def send_apply_to_vacancy(writer):
         count = get_parallel_driver_count()
         if count:
             asyncio.run(apply_to_vacancies_parallel_batched(
-                vacancies, shadow=shadow, MAX_PARALLEL_DRIVERS=count))
+                vacancies, shadow=shadow, max_parallel_drivers=count))
     else:
         print("❌ Неизвестный выбор.")
 
