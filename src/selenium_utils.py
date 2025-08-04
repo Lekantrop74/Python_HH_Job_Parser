@@ -15,6 +15,7 @@
 """
 
 import asyncio
+import os
 import pickle
 from functools import lru_cache
 from selenium import webdriver
@@ -23,6 +24,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+
+from src.DBManager import DBVacanciesManager
 
 # Конфигурация Chrome драйвера для headless режима
 options = Options()
@@ -40,9 +43,8 @@ options.add_experimental_option("prefs", {
 })
 
 # Константы конфигурации
-LETTER_TEMPLATE_PATH = "src/cover_letter.txt"  # Путь к шаблону сопроводительного письма
-# MAX_PARALLEL_DRIVERS = 3  # Максимальное количество параллельных браузеров
-PAGE_TIMEOUT = 5  # Таймаут ожидания элементов страницы (в секундах)
+LETTER_TEMPLATE_PATH = os.getenv("LETTER_TEMPLATE_PATH", "src/cover_letter.txt")
+PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", 5))
 
 
 def save_cookies():
@@ -274,34 +276,23 @@ def process_single_vacancy(driver, vacancy):
         return False, "error", f"❌ Ошибка: {vacancy['vacancy_name']} ({e})"
 
 
-def apply_to_vacancy_batch(vacancies, final_stats, shadow):
-    """
-    Обрабатывает пакет вакансий в одном браузере
-    
-    Args:
-        vacancies (list): Список словарей с информацией о вакансиях
-        final_stats (dict): Словарь для накопления статистики
-            Должен содержать ключи: "applied", "already_applied", "rejected", "errors"
-        shadow (bool): Запускать с сокрытием окон webdriver.Chrome() или нет.
-            
-    Функция создает один экземпляр браузера и обрабатывает все вакансии
-    из пакета последовательно. Статистика накапливается в final_stats.
-    
-    В конце работы браузер автоматически закрывается.
-    """
-
+def apply_to_vacancy_batch(vacancies, final_stats, shadow, db_path="vacancies.db"):
     driver = webdriver.Chrome(options=options if shadow else None)
     load_cookies(driver)
 
-    # Счетчики для текущего пакета
+    db = DBVacanciesManager(db_path)
+    db.create_processed_urls_table()
+
     applied = already_applied = rejected = errors = 0
-    total = len(vacancies)
+    processed_id = []
 
     try:
         for idx, vacancy in enumerate(vacancies, 1):
             success, status, message = process_single_vacancy(driver, vacancy)
 
-            # Обновляем счетчики в зависимости от статуса
+            if status != "error":
+                processed_id.append(vacancy["id"])
+
             if status == "applied":
                 applied += 1
             elif status == "already_applied":
@@ -311,15 +302,14 @@ def apply_to_vacancy_batch(vacancies, final_stats, shadow):
             else:
                 errors += 1
 
-            # Выводим прогресс обработки
             print(
                 f"\n{message}"
-                f"\n📊 {idx}/{total} "
+                f"\n📊 {idx}/{len(vacancies)} "
                 f"| ✅ Новые: {applied} | ⏭ Уже были: {already_applied} "
                 f"| ❌ Отказ: {rejected} | 🛑 Ошибки: {errors}")
 
     finally:
-        # Добавляем статистику текущего пакета к общей статистике
+        db.insert_processed_ids_bulk(processed_id)
         final_stats["applied"] += applied
         final_stats["already_applied"] += already_applied
         final_stats["rejected"] += rejected
@@ -327,16 +317,17 @@ def apply_to_vacancy_batch(vacancies, final_stats, shadow):
         driver.quit()
 
 
-async def apply_to_vacancies_parallel_batched(vacancies, shadow=True, MAX_PARALLEL_DRIVERS = 3):
+async def apply_to_vacancies_parallel_batched(vacancies, shadow=True, max_parallel_drivers=3):
     """
     Обрабатывает вакансии параллельно с использованием нескольких браузеров
     
     Args:
         vacancies (list): Список словарей с информацией о вакансиях
         shadow (bool): Список словарей с информацией о вакансиях
+        max_parallel_drivers (int):
         
     Функция разделяет все вакансии на пакеты и обрабатывает их
-    параллельно с использованием MAX_PARALLEL_DRIVERS браузеров.
+    параллельно с использованием max_parallel_drivers браузеров.
     
     В конце выводит итоговую статистику по всем обработанным вакансиям.
     
@@ -344,7 +335,7 @@ async def apply_to_vacancies_parallel_batched(vacancies, shadow=True, MAX_PARALL
         await apply_to_vacancies_parallel_batched(vacancies_list)
     """
     # Вычисляем размер пакета для равномерного распределения
-    batch_size = (len(vacancies) + MAX_PARALLEL_DRIVERS - 1) // MAX_PARALLEL_DRIVERS
+    batch_size = (len(vacancies) + max_parallel_drivers - 1) // max_parallel_drivers
     batches = [vacancies[i:i + batch_size] for i in range(0, len(vacancies), batch_size)]
 
     # Инициализируем общую статистику
