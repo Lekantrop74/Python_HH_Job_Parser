@@ -1,25 +1,6 @@
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Optional
-from configparser import ConfigParser
-
-
-def config(filename="database.ini", section="postgresql") -> dict:
-    """
-    Получить конфигурацию для подключения к базе данных
-    :param filename: имя файла конфигурации
-    :param section: имя секции в файле конфигурации
-    :return: словарь с параметрами подключения
-    """
-    parser = ConfigParser()  # Создаём объект для парсинга конфигурационного файла
-    parser.read(filename)  # Читаем файл конфигурации
-
-    if parser.has_section(section):  # Проверяем, есть ли нужная секция в файле
-        return dict(parser.items(section))  # Преобразуем параметры подключения в словарь и возвращаем
-    else:
-        raise Exception(  # Вызываем исключение, если секция не найдена
-            f"Секция '{section}' не найдена в файле '{filename}'."
-        )
 
 
 def export_vacancies(vacancies: List[Dict], file_format: str = "csv", filename: Optional[str] = None) -> str:

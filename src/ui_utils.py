@@ -3,7 +3,7 @@ import os
 from typing import Optional, Callable, List
 
 from src.Request_func import get_vacancies_async
-from src.data_utils import compare_vacancies, export_vacancies, filter_vacancies
+from src.data_utils import export_vacancies
 from src.selenium_utils import apply_to_vacancies_parallel_batched
 
 MAX_PARALLEL_ALLOWED = int(os.getenv("MAX_PARALLEL_ALLOWED", 5))
@@ -72,18 +72,6 @@ def print_vacancies(vacancies: List[dict], empty_message: str = "Нет вака
             f"\n{i}. {v.get('vacancy_name', 'Без названия')}\n"
             f"Ссылка: https://hh.ru/vacancy/{v['id']}"
         )
-
-
-def print_stats(stats: dict) -> None:
-    print("\nСтатистика по вакансиям:")
-    print(f"Всего вакансий: {stats.get('total_vacancies', 0)}")
-    print(f"Уникальных городов: {stats.get('unique_cities', 0)}")
-    print(f"Средняя зарплата: {stats.get('avg_salary_from', 0):.0f} - {stats.get('avg_salary_to', 0):.0f}")
-    print(f"Максимальная зарплата: {stats.get('max_salary', 0)}")
-    print(f"Минимальная зарплата: {stats.get('min_salary', 0)}\n")
-    print("Топ-5 городов:")
-    for city, count in stats.get('top_cities', {}).items():
-        print(f"  {city}: {count}")
 
 
 # ==== Обработчики ====
