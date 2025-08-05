@@ -244,7 +244,7 @@ def process_single_vacancy(driver, vacancy):
         driver: Экземпляр WebDriver для взаимодействия со страницей
         vacancy (dict): Словарь с информацией о вакансии
             Должен содержать ключи:
-            - 'url': URL вакансии
+            - 'id': id вакансии
             - 'vacancy_name': Название вакансии
             
     Returns:
@@ -259,7 +259,7 @@ def process_single_vacancy(driver, vacancy):
     3. Заполнение и отправка сопроводительного письма (если отклик возможен)
     """
     try:
-        driver.get(vacancy['url'])
+        driver.get(f"https://hh.ru/vacancy/{vacancy['id']}")
 
         # Пытаемся откликнуться на вакансию
         success, status, message = check_and_click_apply(driver)

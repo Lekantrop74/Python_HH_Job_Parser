@@ -11,11 +11,9 @@ def main():
         "2": handle_show_all,
         "3": handle_search_by_keyword,
         "4": clear_table,
-        "5": handle_filter_vacancies,
-        "6": handle_export,
-        "7": handle_compare_vacancies,
-        "8": save_cookies,
-        "9": send_apply_to_vacancy,
+        "5": handle_export,
+        "6": save_cookies,
+        "7": send_apply_to_vacancy,
         "10": exit_program
     }
 
