@@ -44,10 +44,7 @@ def export_vacancies(vacancies: List[Dict], file_format: str = "csv", filename: 
     # Преобразуем данные в формат DataFrame
     df = pd.DataFrame([{
         'Название вакансии': v['vacancy_name'],
-        'Город': v['area'],
-        'Зарплата от': v['salary_from'],
-        'Зарплата до': v['salary_to'],
-        'Ссылка': v['url']
+        'Ссылка': f"https://hh.ru/vacancy/{v['id']}"
     } for v in vacancies])
 
     # Сохраняем файл в нужном формате

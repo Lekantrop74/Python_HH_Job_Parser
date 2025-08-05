@@ -18,10 +18,6 @@ class DBVacanciesManager:
             CREATE TABLE IF NOT EXISTS vacancies (
                 id INTEGER PRIMARY KEY,
                 name TEXT,
-                url TEXT,
-                salary_from INTEGER,
-                salary_to INTEGER,
-                area TEXT,
                 description TEXT
             );
         """)
@@ -34,12 +30,11 @@ class DBVacanciesManager:
     def write_data(self, data):
         query = """
             INSERT OR IGNORE INTO vacancies 
-            (id, name, url, salary_from, salary_to, area, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?);
+            (id, name,   description)
+            VALUES (?, ?, ?);
         """
         data_tuples = list(map(lambda v: (
-            v["id"], v["name"], v["url"], v["salary_from"],
-            v["salary_to"], v["area"], v["description"]
+            v["id"], v["name"], v["description"]
         ), data))
 
         self.execute_query(query, data_tuples, executemany=True)
