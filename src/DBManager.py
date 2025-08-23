@@ -42,23 +42,23 @@ class DBVacanciesManager:
 
     def get_all_vacancies(self):
         rows = self.execute_query(
-            "SELECT id, name, salary_from, salary_to, url, area, description FROM vacancies;",
+            "SELECT id, name,  description FROM vacancies;",
             fetch_all=True
         )
-        keys = ["id", "vacancy_name", "salary_from", "salary_to", "url", "area", "description"]
+        keys = ["id", "vacancy_name",  "description"]
         return self.map_to_dict(keys, rows)
 
     def get_vacancies_by_keyword(self, keyword):
         rows = self.execute_query(
             """
-            SELECT id, name, salary_from, salary_to, area, url
+            SELECT id, name
             FROM vacancies
             WHERE LOWER(name) LIKE LOWER(?);
             """,
             (f"%{keyword}%",),
             fetch_all=True
         )
-        keys = ["id", "vacancy_name", "salary_from", "salary_to", "area", "url"]
+        keys = ["id", "vacancy_name"]
         return self.map_to_dict(keys, rows)
 
     def execute_query(self, query, data=None, fetch_all=False, executemany=False):

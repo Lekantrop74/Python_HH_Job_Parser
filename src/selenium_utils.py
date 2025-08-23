@@ -47,7 +47,7 @@ LETTER_TEMPLATE_PATH = os.getenv("LETTER_TEMPLATE_PATH", "src/cover_letter.txt")
 PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", 5))
 
 
-def save_cookies():
+def save_cookies(w):
     """
     Сохраняет cookies для авторизации на hh.ru
     
