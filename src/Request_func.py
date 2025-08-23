@@ -170,7 +170,7 @@ class HHClient:
     - Загрузки детальной информации о вакансиях
     - Обработки ошибок и капчи
     """
-    
+
     BASE_URL = "https://api.hh.ru/vacancies"
 
     def __init__(self, session: aiohttp.ClientSession):
@@ -223,7 +223,8 @@ class HHClient:
             data = await resp.json()
             return data.get("found", 0)
 
-    async def fetch_page(self, keyword: str, search_field: str, page: int, order_by: Optional[str] = None) -> List[Dict]:
+    async def fetch_page(self, keyword: str, search_field: str, page: int, order_by: Optional[str] = None) -> List[
+        Dict]:
         """
         Загружает страницу вакансий.
         
@@ -264,12 +265,12 @@ class HHClient:
 
 # === Основная функция ===
 async def get_vacancies_async(
-    keyword: str,
-    max_vacancies: int,
-    search_field: str,
-    order_by: Optional[str] = None,
-    required_skills: Optional[List[str]] = None,
-    show_progress: bool = True,
+        keyword: str,
+        max_vacancies: int,
+        search_field: str,
+        order_by: Optional[str] = None,
+        required_skills: Optional[List[str]] = None,
+        show_progress: bool = True,
 ) -> Tuple[List[Dict], int]:
     """
     Основная функция для получения вакансий с фильтрацией.
@@ -305,7 +306,7 @@ async def get_vacancies_async(
         ... )
     """
     data: List[Dict] = []
-    
+
     # Инициализируем базу данных для отслеживания обработанных вакансий
     db = DBVacanciesManager()
     db.create_processed_urls_table()
@@ -313,7 +314,7 @@ async def get_vacancies_async(
 
     async with aiohttp.ClientSession(headers={"User-Agent": "my-hh-bot"}) as session:
         client = HHClient(session)
-        
+
         # Получаем общее количество вакансий
         total_found = await client.get_total_count(keyword, search_field, order_by)
         logger.info(f"Всего найдено: {total_found}")
@@ -331,9 +332,12 @@ async def get_vacancies_async(
             # Фильтруем уже обработанные вакансии
             vacancies = [v for v in vacancies if int(v["id"]) not in seen_ids]
 
-            # Ограничиваем количество вакансий по max_vacancies
-            limit = max_vacancies - len(data)
-            vacancies = vacancies[:limit]
+            exclude_words = {"преподава", "репетитор", "педагог", "учите", "аналитик", "c#", "c++", "frontend"}
+
+            vacancies = [
+                v for v in vacancies
+                if not any(word in v["name"].lower() for word in exclude_words)
+            ]
 
             if required_skills:
                 # Если указаны требуемые навыки, загружаем детальную информацию
@@ -364,4 +368,4 @@ async def get_vacancies_async(
             page += 1
 
     print(f"Загружено {len(data)} из {total_found}")
-    return data, total_found
+    return data[:max_vacancies], total_found
