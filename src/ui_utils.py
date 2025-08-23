@@ -1,3 +1,14 @@
+"""
+Консольное меню для работы с вакансиями с hh.ru.
+
+Основные возможности:
+- Поиск вакансий с использованием API hh.ru.
+- Сохранение вакансий в локальную базу данных.
+- Просмотр, поиск и фильтрация сохранённых вакансий.
+- Экспорт вакансий в CSV или Excel.
+- Автоматическая рассылка откликов на сохранённые вакансии через Selenium.
+"""
+
 import asyncio
 import os
 from typing import Optional, Callable, List
@@ -10,7 +21,16 @@ MAX_PARALLEL_ALLOWED = int(os.getenv("MAX_PARALLEL_ALLOWED", 5))
 
 
 def get_input(prompt: str, cast: Callable, default: Optional = None) -> Optional:
-    """Запрашивает ввод пользователя, преобразует к нужному типу или возвращает default."""
+    """
+    Запрашивает ввод у пользователя, приводит к указанному типу или возвращает значение по умолчанию.
+    Args:
+        prompt (str): Текст запроса для пользователя.
+        cast (Callable): Функция для приведения типа (например, int, str).
+        default (Optional): Значение по умолчанию, если ввод пустой.
+    Returns:
+        Optional: Введённое и приведённое к типу значение или default.
+    """
+
     while True:
         val = input(prompt).strip()
         if not val:
@@ -60,10 +80,25 @@ menus = {
 
 
 def print_menu(menu_type: str = "main") -> None:
+    """
+    Выводит меню на экран.
+    Args:
+        menu_type (str, optional): Тип меню (ключ из словаря `menus`).
+                                   По умолчанию "main".
+    """
+
     print("\n" + "\n".join(menus.get(menu_type, [])))
 
 
 def print_vacancies(vacancies: List[dict], empty_message: str = "Нет вакансий") -> None:
+    """
+    Выводит список вакансий в консоль.
+    Args:
+        vacancies (List[dict]): Список вакансий (каждая вакансия — dict).
+        empty_message (str, optional): Сообщение, если список пуст.
+                                       По умолчанию "Нет вакансий".
+    """
+
     if not vacancies:
         print(empty_message)
         return
@@ -77,6 +112,13 @@ def print_vacancies(vacancies: List[dict], empty_message: str = "Нет вака
 # ==== Обработчики ====
 
 def handle_search_and_save(writer) -> None:
+    """
+    Выполняет поиск вакансий через API hh.ru, очищает таблицу и сохраняет новые результаты.
+    Args:
+        writer: Объект для работы с базой данных (должен поддерживать методы
+                create_table(), clear_table(), write_data()).
+    """
+
     keyword = get_input("Введите ключевое слово для поиска: ", str)
     max_vacancies = get_input("Введите количество вакансий для поиска (По умолчанию 5): ", int, 5)
 
@@ -128,20 +170,35 @@ def handle_search_and_save(writer) -> None:
 
 
 def handle_show_all(writer) -> None:
+    """
+    Показывает все сохранённые вакансии.
+    Args:
+        writer: Объект для работы с базой данных (метод get_all_vacancies()).
+    """
+
     vacancies = writer.get_all_vacancies()
     print_vacancies(vacancies, "Нет сохраненных вакансий")
 
 
 def handle_search_by_keyword(writer) -> None:
+    """
+    Выполняет поиск сохранённых вакансий по ключевому слову.
+    Args:
+        writer: Объект для работы с базой данных (метод get_vacancies_by_keyword()).
+    """
+
     keyword = get_input("Введите ключевое слово для поиска: ", str)
     vacancies = writer.get_vacancies_by_keyword(keyword)
     print_vacancies(vacancies, "Вакансии не найдены")
 
 
-
-
-
 def handle_export(writer) -> None:
+    """
+    Экспортирует вакансии в CSV или Excel.
+    Args:
+        writer: Объект для работы с базой данных (метод get_all_vacancies()).
+    """
+
     vacancies = writer.get_all_vacancies()
     if not vacancies:
         print("Нет сохраненных вакансий")
@@ -159,10 +216,13 @@ def handle_export(writer) -> None:
         print("Неверный выбор формата")
 
 
-
-
-
 def get_parallel_driver_count() -> int:
+    """
+    Запрашивает у пользователя количество параллельных Selenium-драйверов.
+    Returns:
+        int: Количество потоков (от 1 до MAX_PARALLEL_ALLOWED).
+    """
+
     while True:
         count = get_input(f"Введите число потоков (1–{MAX_PARALLEL_ALLOWED}): ", int)
         if count is not None and 1 <= count <= MAX_PARALLEL_ALLOWED:
@@ -171,6 +231,12 @@ def get_parallel_driver_count() -> int:
 
 
 def send_apply_to_vacancy(writer) -> None:
+    """
+    Отправляет отклики на все сохранённые вакансии через Selenium.
+    Args:
+        writer: Объект для работы с базой данных (метод get_all_vacancies()).
+    """
+
     vacancies = writer.get_all_vacancies()
     if not vacancies:
         print("Нет вакансий для отклика.")
@@ -191,10 +257,20 @@ def send_apply_to_vacancy(writer) -> None:
 
 
 def clear_table(writer) -> None:
+    """
+    Очищает таблицу вакансий в базе данных.
+    Args:
+        writer: Объект для работы с базой данных (метод clear_table()).
+    """
+
     writer.clear_table()
     print("База данных очищена.")
 
 
 def exit_program(_=None) -> None:
+    """
+    Завершает выполнение программы.
+    """
+
     print("До свидания!")
     exit()
